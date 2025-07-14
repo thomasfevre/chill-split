@@ -1,0 +1,1 @@
+export const USDC_ADDRESS="0x54777c538b0BD0e4bFB148f6819bd507fF5B099E"; // sepolia
