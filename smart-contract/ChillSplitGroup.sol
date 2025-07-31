@@ -3,6 +3,7 @@ pragma solidity ^0.8.20;
 
 import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import "@openzeppelin/contracts/token/ERC20/extensions/IERC20Permit.sol";
+import "@openzeppelin/contracts/utils/math/Math.sol";
 
 // Custom error definitions
 error NotParticipant();
@@ -25,6 +26,8 @@ error NotFactory();
 error CannotRemoveCreator();
 error NotPayer();
 error PermitAmountTooLow();
+error NoValidatorsProvided();
+error MaxExpensesReached();
 
 contract ChillSplitGroup {
     address private factory;
@@ -34,6 +37,8 @@ contract ChillSplitGroup {
         Closed
     }
     GroupState private groupState;
+
+    uint256 private constant MAX_EXPENSES = 100;
 
     struct Expense {
         string label;
@@ -139,9 +144,9 @@ contract ChillSplitGroup {
         address _payer,
         address[] memory _validators
     ) external onlyParticipant {
-        if (groupState != GroupState.Live) {
-            revert GroupNotLive();
-        }
+        if (groupState != GroupState.Live) revert GroupNotLive();
+        if (expenseCount >= MAX_EXPENSES) revert MaxExpensesReached();
+        if (_validators.length == 0) revert NoValidatorsProvided();
 
         Expense storage newExpense = expenses[expenseCount];
         newExpense.label = _label;
@@ -254,9 +259,8 @@ contract ChillSplitGroup {
 
     function finalizeExpense(uint256 _expenseId) internal {
         Expense storage expense = expenses[_expenseId];
-        if (expense.fullyValidated) {
-            revert AlreadyFinalized();
-        }
+        if (expense.fullyValidated) revert AlreadyFinalized();
+        if (expense.validators.length == 0) return; 
 
         expense.fullyValidated = true;
 
@@ -335,11 +339,14 @@ contract ChillSplitGroup {
             // Transfer USDC to all user that have a balance > 0 (bc they owes money)
             for (uint256 i = 0; i < participants.length; i++) {
                 if (userBalances[participants[i]] > 0) {
-                    usdcToken.transfer(
+                    userBalances[participants[i]] = 0;
+                    bool transferStatus = usdcToken.transfer(
                         participants[i],
                         uint256(userBalances[participants[i]])
                     );
-                    userBalances[participants[i]] = 0;
+                    if (!transferStatus) {
+                        revert USDCTransferFailed();
+                    }
                 }
             }
             groupState = GroupState.Closed;
@@ -367,7 +374,7 @@ contract ChillSplitGroup {
             revert PermitAmountTooLow();
         }
 
-        uint256 amountWithDecimals = amountToReimburse * 10 ** decimals / 100;
+        uint256 amountWithDecimals = Math.mulDiv(amountToReimburse, 10 ** decimals, 100);
 
         // 1. Execute the permit
         IERC20Permit(address(usdcToken)).permit(
@@ -397,8 +404,15 @@ contract ChillSplitGroup {
             for (uint256 i = 0; i < participants.length; i++) {
                 int256 ub = userBalances[participants[i]];
                 if (ub > 0) {
-                    userBalances[participants[i]] = 0;
-                    usdcToken.transfer(participants[i], uint256(ub) * 10 ** decimals / 100);
+                   uint256 owedAmount = uint256(ub);
+                    userBalances[participants[i]] = 0; 
+                    
+                    uint256 owedWithDecimals = Math.mulDiv(owedAmount, 10 ** decimals, 100);
+                    bool transferSuccess = usdcToken.transfer(participants[i], owedWithDecimals);
+                    if(!transferSuccess) {
+                        userBalances[participants[i]] = ub; // Revert state on failure
+                        // Note: This could lock funds if one transfer fails. A withdrawal pattern is more robust.
+                    }
                 }
             }
             groupState = GroupState.Closed;
