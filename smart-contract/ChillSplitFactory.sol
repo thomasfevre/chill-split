@@ -8,13 +8,16 @@ error GroupCodeAlreadyExists();
 error GroupCodeDoesNotExist();
 error FailedToAddGroupMembers();
 error FailedToRemoveGroupMembers();
-error NotGroupCreator();
+error NotAuthorized(); // Changed from NotGroupCreator for clarity
+error GroupIsDeleted();
 
 contract ChillSplitFactory {
     mapping(address => address[]) private groupsByUser;
     mapping(bytes32 => address) private groupCodeToAddress;
+    mapping(address => bool) public isGroupDeleted;
 
     event GroupCreated(address indexed groupAddress, bytes32 name, bytes32 code, address creator);
+    event GroupDeleted(address indexed groupAddress, bytes32 code);
 
     function createGroup(string memory _name, bytes32 _code, address[] memory _participants, string[] memory _usernames,
                          address _usdcToken, uint8 _decimals) external {
@@ -27,25 +30,26 @@ contract ChillSplitFactory {
         }
 
         ChillSplitGroup newGroup = new ChillSplitGroup(_name, _code, _participants, _usernames, msg.sender, _usdcToken, _decimals);
+        address groupAddress = address(newGroup);
 
-        groupCodeToAddress[_code] = address(newGroup);
+        groupCodeToAddress[_code] = groupAddress;
 
         for (uint i = 0; i < _participants.length; i++) {
-            address p = _participants[i];
-            groupsByUser[p].push(address(newGroup));
+            groupsByUser[_participants[i]].push(groupAddress);
         }
-        groupsByUser[msg.sender].push(address(newGroup));
 
-
-        emit GroupCreated(address(newGroup), keccak256(bytes(_name)), _code, msg.sender);
+        emit GroupCreated(groupAddress, keccak256(bytes(_name)), _code, msg.sender);
     }
 
     function joinGroup(bytes32 _code, string memory _username) external {
-        if (groupCodeToAddress[_code] == address(0)) {
+        address groupAddress = groupCodeToAddress[_code];
+        if (groupAddress == address(0)) {
             revert GroupCodeDoesNotExist();
         }
+        if (isGroupDeleted[groupAddress]) {
+            revert GroupIsDeleted();
+        }
         
-        address groupAddress = groupCodeToAddress[_code];
         address[] memory newParticipants = new address[](1);
         newParticipants[0] = msg.sender;
         string[] memory newUsernames = new string[](1);
@@ -62,8 +66,8 @@ contract ChillSplitFactory {
     function removeParticipant(address _groupAddress, address _participantToRemove) external {
         address creator = ChillSplitGroup(_groupAddress).getCreator();
         
-        if (msg.sender != creator || msg.sender != _participantToRemove) {
-            revert NotGroupCreator();
+        if (msg.sender != creator && msg.sender != _participantToRemove) {
+            revert NotAuthorized();
         }
 
         address[] storage groups = groupsByUser[_participantToRemove];
@@ -82,38 +86,41 @@ contract ChillSplitFactory {
     }
 
     function getGroupsByUser(address _user) external view returns (address[] memory) {
-        return groupsByUser[_user];
+        address[] storage userGroups = groupsByUser[_user];
+        uint activeGroupCount = 0;
+        for(uint i = 0; i < userGroups.length; i++) {
+            if(!isGroupDeleted[userGroups[i]]) {
+                activeGroupCount++;
+            }
+        }
+
+        address[] memory activeGroups = new address[](activeGroupCount);
+        uint counter = 0;
+        for(uint i = 0; i < userGroups.length; i++) {
+            if(!isGroupDeleted[userGroups[i]]) {
+                activeGroups[counter] = userGroups[i];
+                counter++;
+            }
+        }
+        return activeGroups;
     }
 
     function getGroupAddress(bytes32 _code) public view returns (address) {
         return groupCodeToAddress[_code];
     }
 
-    function deleteGroup(bytes32 _code) external returns (bool) {
+    function deleteGroup(bytes32 _code) external {
         address groupAddress = groupCodeToAddress[_code];
         if (groupAddress == address(0)) revert GroupCodeDoesNotExist();
 
         address creator = ChillSplitGroup(groupAddress).getCreator();
-        if(msg.sender != creator) revert NotGroupCreator();
+        if(msg.sender != creator) revert NotAuthorized();
 
-        // Fetch the participant list directly from the group contract
-        address[] memory participants_ = ChillSplitGroup(groupAddress).getParticipantsForFactory();
-
-        // Remove from groupCodeToAddress
+        // Instead of looping through all users, we just mark the group as deleted.
+        // The `getGroupsByUser` function will handle filtering (lazy cleanup).
         delete groupCodeToAddress[_code];
+        isGroupDeleted[groupAddress] = true;
 
-        // Remove from each user’s group list
-        for (uint i = 0; i < participants_.length; i++) {
-            address[] storage groups = groupsByUser[participants_[i]];
-            for (uint j = 0; j < groups.length; j++) {
-                if (groups[j] == groupAddress) {
-                    groups[j] = groups[groups.length - 1];
-                    groups.pop();
-                    break;
-                }
-            }
-        }
-
-        return true;
+        emit GroupDeleted(groupAddress, _code);
     }
 }
