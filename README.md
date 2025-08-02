@@ -5,7 +5,7 @@
 Chill'Split lets friends and groups split expenses in a transparent, trustless, and automated way — powered by smart contracts, but **designed for everyday users**. It abstracts away blockchain complexity using modern wallet tech, gas sponsorship, and automatic reimbursements.  
 
 - Live on Base Sepolia: [Try it](https://chill-split.vercel.app)
-- Or watch the video demo : [Watch the video](https://1drv.ms/v/s!AtdUrFtj-JzFi_hO_W5SLLgNc1KF_Q)
+- Or watch the video demo : [Watch the video](https://www.youtube.com/watch?v=vE-owuccb9k)
   
 <br>
 
