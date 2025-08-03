@@ -28,6 +28,7 @@ error NotPayer();
 error PermitAmountTooLow();
 error NoValidatorsProvided();
 error MaxExpensesReached();
+error MaxParticipantsReached();
 
 contract ChillSplitGroup {
     address private factory;
@@ -39,6 +40,7 @@ contract ChillSplitGroup {
     GroupState private groupState;
 
     uint256 private constant MAX_EXPENSES = 100;
+    uint256 private constant MAX_USERS = 100;
 
     struct Expense {
         string label;
@@ -473,6 +475,10 @@ contract ChillSplitGroup {
 
         if (_participants.length == 0) {
             revert NoParticipantsProvided();
+        }
+
+        if ((_participants.length + 1) > MAX_PARTICIPANTS) {
+            revert MaxParticipantsReached();
         }
 
         // Add new participants to the end of array
