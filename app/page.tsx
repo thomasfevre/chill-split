@@ -181,7 +181,7 @@ export default function Home() {
                 <h1 className="text-4xl font-bold tracking-tighter sm:text-5xl md:text-6xl bg-clip-text text-transparent bg-gradient-to-r from-white to-gray-400">
                   Split Expenses with Friends
                   <br />
-                  on the Blockchain
+                 
                 </h1>
                 <p className="mx-auto max-w-[700px] text-gray-300 text-lg md:text-xl">
                   Chill&apos;Split makes it easy to track, validate, and settle
