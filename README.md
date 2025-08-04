@@ -100,10 +100,6 @@ npm run build
 npm run start
 ```
 
-<br><br>
-
-## 📸 Screenshots  
-Coming soon... UI mockups and flow diagrams
 
 <br><br>
 
